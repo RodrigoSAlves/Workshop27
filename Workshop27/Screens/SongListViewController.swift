@@ -28,7 +28,9 @@ final class SongListViewController: UITableViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         switch source {
-        case .liked: title = "Liked Songs"
+        case .liked:
+            title = "Liked Songs"
+            installSettingsButton()
         case .playlist(let playlist):
             title = playlist.name
             navigationItem.largeTitleDisplayMode = .never

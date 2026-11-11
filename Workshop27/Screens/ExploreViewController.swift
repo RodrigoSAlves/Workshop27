@@ -28,6 +28,7 @@ final class ExploreViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         navigationItem.title = greeting()
+        installSettingsButton()
         view.backgroundColor = .systemBackground
 
         setUpScrollView()

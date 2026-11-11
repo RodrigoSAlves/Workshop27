@@ -40,6 +40,14 @@ final class SettingsViewController: UIViewController, UITableViewDataSource, UIT
         title = "Settings"
         view.backgroundColor = .systemGroupedBackground
 
+        if navigationController?.viewControllers.first === self {
+            navigationItem.rightBarButtonItem = UIBarButtonItem(
+                systemItem: .done,
+                primaryAction: UIAction { [weak self] _ in self?.dismiss(animated: true) })
+        } else {
+            navigationItem.largeTitleDisplayMode = .never
+        }
+
         tableView.dataSource = self
         tableView.delegate = self
         tableView.tintColor = .systemPink

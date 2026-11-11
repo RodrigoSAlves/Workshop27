@@ -50,7 +50,12 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     // scene(_:willConnectTo:options:) / scene(_:openURLContexts:).
     func application(_ app: UIApplication, open url: URL,
                      options: [UIApplication.OpenURLOptionsKey: Any] = [:]) -> Bool {
-        guard url.scheme == "musiclib", let tab = MainTabBarController.Tab(host: url.host) else { return false }
+        guard url.scheme == "musiclib" else { return false }
+        if url.host == "settings" {
+            rootTabBarController?.showSettings()
+            return true
+        }
+        guard let tab = MainTabBarController.Tab(host: url.host) else { return false }
         rootTabBarController?.selectedIndex = tab.rawValue
         return true
     }

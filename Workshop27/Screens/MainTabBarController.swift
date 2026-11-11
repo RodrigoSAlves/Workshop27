@@ -8,13 +8,12 @@ import UIKit
 final class MainTabBarController: UITabBarController {
 
     enum Tab: Int {
-        case explore, liked, settings
+        case explore, liked
 
         init?(host: String?) {
             switch host {
             case "explore": self = .explore
             case "liked": self = .liked
-            case "settings": self = .settings
             default: return nil
             }
         }
@@ -28,7 +27,6 @@ final class MainTabBarController: UITabBarController {
         viewControllers = [
             makeTab(ExploreViewController(), title: "Explore", image: "square.grid.2x2", selected: "square.grid.2x2.fill"),
             makeTab(SongListViewController(source: .liked), title: "Liked Songs", image: "heart", selected: "heart.fill"),
-            makeTab(SettingsViewController(), title: "Settings", image: "gearshape", selected: "gearshape.fill"),
         ]
 
         view.addSubview(miniPlayer)
@@ -70,6 +68,27 @@ final class MainTabBarController: UITabBarController {
             coordinator.animate(alongsideTransition: { _ in
                 self.miniPlayer.frame = self.miniPlayerFrame()
             })
+        }
+    }
+
+    // MARK: - Settings
+
+    /// Opens Settings from the selected tab (nav bar button or `musiclib://settings`).
+    func showSettings() {
+        guard let nav = selectedViewController as? UINavigationController else { return }
+        if nav.topViewController is SettingsViewController { return }
+        let settings = SettingsViewController()
+
+        // ⚠️ BAD PRACTICE: the idiom decides the presentation style. A narrow iPad window
+        // gets a form sheet that fills it anyway; a wide iPhone window gets a full-width push.
+        // Let the size class / UISheetPresentationController adapt instead.
+        if Device.isPad {
+            let modal = UINavigationController(rootViewController: settings)
+            modal.modalPresentationStyle = .formSheet
+            modal.preferredContentSize = CGSize(width: Metrics.settingsMaxWidth, height: Device.screenHeight * 0.7)
+            present(modal, animated: true)
+        } else {
+            nav.pushViewController(settings, animated: true)
         }
     }
 

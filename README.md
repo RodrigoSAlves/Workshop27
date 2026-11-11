@@ -4,7 +4,8 @@ A small UIKit Music Library app, **written on purpose with the layout practices 
 
 - Swift, programmatic UIKit, no SwiftUI, no storyboards (only the launch screen)
 - AppDelegate-only life cycle (no `UISceneDelegate`)
-- 3 tabs: **Explore** (featured mix, favourite playlists, new songs, mixes, recently played), **Liked Songs** (persisted likes, play/shuffle, swipe to unlike), **Settings** (streaming quality, playback toggles, theme, connected apps, layout diagnostics)
+- 2 tabs: **Explore** (featured mix, favourite playlists, new songs, mixes, recently played) and **Liked Songs** (persisted likes, play/shuffle, swipe to unlike)
+- **Settings** (streaming quality, playback toggles, theme, connected apps, layout diagnostics) opens from the gear button in the navigation bar of both tabs: pushed on iPhone, a form sheet on iPad
 - Nothing actually plays. A fake "now playing" mini player floats above the tab bar
 - All data is synthetic (`Model/MusicLibrary.swift`)
 
@@ -76,6 +77,8 @@ Deep links: `musiclib://explore`, `musiclib://liked`, `musiclib://settings`. Hom
 | `SettingsViewController` | Table clamped to 640 pt when `isPad`, full width otherwise | Should use `cellLayoutMarginsFollowReadableWidth` / `readableContentGuide` |
 | `SettingsViewController.installedShareTargets`, `openMusicApp` | `canOpenURL` on 30 schemes, `canOpenURL` before `open` | Over the 25 limit. Apple recommends `open` plus failure handling |
 | `SongActions.present` | iPad-only popover anchored to the screen centre | Wrong anchor in a non-full-screen window |
+| `MainTabBarController.showSettings` | Push on iPhone, form sheet on iPad, chosen by idiom. Sheet height = 70% of screen | A narrow iPad window gets a sheet that fills it anyway. A wide iPhone window gets a full-width push. Let the size class or `UISheetPresentationController` adapt |
+| `UIViewController.openSettings` (`SettingsButton.swift`) | Reaches the root through `UIApplication.shared.delegate`'s window | Use `view.window?.rootViewController` or the scene |
 | `ArtworkView`, `SettingsViewController` | `traitCollectionDidChange(_:)` | Deprecated since iOS 17. Use `registerForTraitChanges` (17+) or automatic trait tracking in `layoutSubviews` / `viewWillLayoutSubviews` (18+) |
 | `ThemeManager.apply` | Theme applied to `UIApplication.shared.windows` | Should go through the scene's windows (or `windowScene.traitOverrides`) |
 
