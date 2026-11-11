@@ -2,24 +2,72 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>UIApplicationSceneManifest</key>
-	<dict>
-		<key>UIApplicationSupportsMultipleScenes</key>
-		<false/>
-		<key>UISceneConfigurations</key>
+	<!--
+	  ⚠️ LEGACY CONFIGURATION (intentional, for the iOS 27 workshop).
+	  - No UIApplicationSceneManifest: the app uses the AppDelegate-only life cycle.
+	    Built with the iOS 27 SDK the app fails to launch.
+	  - UIRequiresFullScreen: opts out of iPad multitasking. Ignored with the iOS 27 SDK.
+	  - UIDesignRequiresCompatibility: opts out of Liquid Glass. Ignored by Xcode 27 builds.
+	  - LSApplicationQueriesSchemes: 30 entries. The iOS 27 SDK caps this at 25.
+	-->
+	<key>UIRequiresFullScreen</key>
+	<true/>
+	<key>UIDesignRequiresCompatibility</key>
+	<true/>
+	<key>CFBundleURLTypes</key>
+	<array>
 		<dict>
-			<key>UIWindowSceneSessionRoleApplication</key>
+			<key>CFBundleURLName</key>
+			<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+			<key>CFBundleURLSchemes</key>
 			<array>
-				<dict>
-					<key>UISceneConfigurationName</key>
-					<string>Default Configuration</string>
-					<key>UISceneDelegateClassName</key>
-					<string>$(PRODUCT_MODULE_NAME).SceneDelegate</string>
-					<key>UISceneStoryboardFile</key>
-					<string>Main</string>
-				</dict>
+				<string>musiclib</string>
 			</array>
 		</dict>
-	</dict>
+	</array>
+	<key>UIApplicationShortcutItems</key>
+	<array>
+		<dict>
+			<key>UIApplicationShortcutItemType</key>
+			<string>$(PRODUCT_BUNDLE_IDENTIFIER).liked</string>
+			<key>UIApplicationShortcutItemTitle</key>
+			<string>Liked Songs</string>
+			<key>UIApplicationShortcutItemIconSymbolName</key>
+			<string>heart.fill</string>
+		</dict>
+	</array>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>music</string>
+		<string>spotify</string>
+		<string>deezer</string>
+		<string>tidal</string>
+		<string>soundcloud</string>
+		<string>shazam</string>
+		<string>bandcamp</string>
+		<string>lastfm</string>
+		<string>pandora</string>
+		<string>youtube</string>
+		<string>instagram</string>
+		<string>instagram-stories</string>
+		<string>fb</string>
+		<string>fb-messenger</string>
+		<string>twitter</string>
+		<string>whatsapp</string>
+		<string>tg</string>
+		<string>snapchat</string>
+		<string>tiktok</string>
+		<string>discord</string>
+		<string>slack</string>
+		<string>line</string>
+		<string>viber</string>
+		<string>pinterest</string>
+		<string>reddit</string>
+		<string>linkedin</string>
+		<string>tumblr</string>
+		<string>wechat</string>
+		<string>googlechrome</string>
+		<string>firefox</string>
+	</array>
 </dict>
 </plist>
