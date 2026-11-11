@@ -3,7 +3,7 @@
 A small UIKit Music Library app, **written on purpose with the layout practices that iOS 27 deprecates or discourages**. It's the "before" app for the iOS 27 workshop: we run Apple's skills / agents against it and compare the result.
 
 - Swift, programmatic UIKit, no SwiftUI, no storyboards (only the launch screen)
-- AppDelegate-only life cycle (no `UISceneDelegate`)
+- Scene-based life cycle (`SceneDelegate`), the minimum needed to boot with Xcode 27. Everything else is still legacy
 - 2 tabs: **Explore** (featured mix, favourite playlists, new songs, mixes, recently played) and **Liked Songs** (persisted likes, play/shuffle, swipe to unlike)
 - **Settings** (streaming quality, playback toggles, theme, connected apps, layout diagnostics) opens from the gear button in the navigation bar of both tabs: pushed on iPhone, a form sheet on iPad
 - Nothing actually plays. A fake "now playing" mini player floats above the tab bar
@@ -19,8 +19,10 @@ grep -rn "⚠️" Workshop27
 
 | Toolchain | Result |
 |---|---|
-| **Xcode 26.6** (iOS 26.x SDK) | Builds and runs, with ~13 deprecation warnings. This is the baseline. |
-| **Xcode 27.x** (iOS 27 SDK) | Builds, then **fails to launch** on iOS 27: the process starts and exits without a window, and no error is shown. This is the deck's *Scene Lifecycle Requirements* slide, reproduced. |
+| **Xcode 26.6** (iOS 26.x SDK) | Builds and runs, with deprecation warnings. |
+| **Xcode 27.x** (iOS 27 SDK) | Builds and runs on iOS 27. Liquid Glass is enforced because `UIDesignRequiresCompatibility` is ignored. |
+
+Before the scene life cycle was adopted, Xcode 27 builds **failed to launch** on iOS 27: the process started and exited without a window, and no error was shown (the deck's *Scene Lifecycle Requirements* slide). Check out `bb16e3a` to reproduce it.
 
 ```bash
 DEVELOPER_DIR="/Applications/Xcode 26.6.app/Contents/Developer" xcodebuild -project Workshop27.xcodeproj -scheme Workshop27 -destination 'platform=iOS Simulator,name=iPhone 17,OS=26.5' build
@@ -34,21 +36,23 @@ Deep links: `musiclib://explore`, `musiclib://liked`, `musiclib://settings`. Hom
 
 | Practice | Why it breaks on iOS 27 | Replacement |
 |---|---|---|
-| No `UIApplicationSceneManifest` | Apps built with the iOS 27 SDK must use the scene life cycle or they fail to launch | Add the scene manifest plus a `UIWindowSceneDelegate` |
-| `UIRequiresFullScreen = YES` | Ignored with the iOS 27 SDK, so the app becomes resizable on iPad with no warning | Remove the key and support resizing. To keep the opt-out on older iPadOS, use `UIRequiresFullScreenIgnoredStartingWithVersion` |
+| ~~No `UIApplicationSceneManifest`~~ ✅ fixed | Apps built with the iOS 27 SDK must use the scene life cycle or they fail to launch | Scene manifest plus `SceneDelegate` |
+| `UIRequiresFullScreen = YES` (build setting `INFOPLIST_KEY_UIRequiresFullScreen`) | Ignored with the iOS 27 SDK, so the app becomes resizable on iPad with no warning | Remove the key and support resizing. To keep the opt-out on older iPadOS, use `UIRequiresFullScreenIgnoredStartingWithVersion` |
 | `UIDesignRequiresCompatibility = YES` | Xcode 27 builds ignore it, so Liquid Glass is enforced | Remove the key and adopt Liquid Glass |
 | 30 `LSApplicationQueriesSchemes` | The iOS 27 SDK caps the list at 25 | Call `open(_:options:completionHandler:)` and handle failure. Drop the `canOpenURL` probes |
 
-### 2. Life cycle (`AppDelegate.swift`)
+### 2. Life cycle ✅ fixed (`AppDelegate.swift` → `SceneDelegate.swift`)
 
-| Practice | Replacement |
+| Was | Now |
 |---|---|
 | `var window` on the app delegate, `UIWindow(frame: UIScreen.main.bounds)` | `UIWindow(windowScene:)` in `scene(_:willConnectTo:options:)` |
-| Deep links in `application(_:open:options:)` | `scene(_:willConnectTo:options:)` (cold launch) and `scene(_:openURLContexts:)` |
+| Deep links in `application(_:open:options:)` | `connectionOptions.urlContexts` (cold launch) and `scene(_:openURLContexts:)` |
 | Quick actions from `launchOptions[.shortcutItem]` and `application(_:performActionFor:)` | `connectionOptions.shortcutItem` and `windowScene(_:performActionFor:completionHandler:)` |
-| `application(_:supportedInterfaceOrientationsFor:)` portrait lock on iPhone | `UIWindowSceneDelegate.supportedInterfaceOrientations(for:)`. Treat it as a preference only, since resizable environments ignore it |
+| `application(_:supportedInterfaceOrientationsFor:)` only | `SceneDelegate.supportedInterfaceOrientations(for:)` on iOS 27+. The app-delegate method stays as the iOS 26 fallback (deployment target 26.5). The orientation lock itself is still decided by idiom |
 | `applicationWillResignActive` / `DidBecomeActive` | `sceneWillResignActive` / `sceneDidBecomeActive` |
-| `(UIApplication.shared.delegate as? AppDelegate)?.window` style access | Pass the scene or window down. Use `view.window?.windowScene` |
+| Settings button reached the root through `UIApplication.shared.delegate`'s window | `view.window?.rootViewController` |
+
+`Device.keyWindow` and `ThemeManager` still go through the deprecated `UIApplication.shared.windows`. They work with one scene but are left for the conversion.
 
 ### 3. Space proxies (`Support/Device.swift`, used everywhere)
 
@@ -77,9 +81,7 @@ Deep links: `musiclib://explore`, `musiclib://liked`, `musiclib://settings`. Hom
 | `SettingsViewController` | Table clamped to 640 pt when `isPad`, full width otherwise | Should use `cellLayoutMarginsFollowReadableWidth` / `readableContentGuide` |
 | `SettingsViewController.installedShareTargets`, `openMusicApp` | `canOpenURL` on 30 schemes, `canOpenURL` before `open` | Over the 25 limit. Apple recommends `open` plus failure handling |
 | `SongActions.present` | iPad-only popover anchored to the screen centre | Wrong anchor in a non-full-screen window |
-| `MainTabBarController.showSettings` | Push on iPhone, form sheet on iPad, chosen by idiom. Sheet height = 70% of screen | A narrow iPad window gets a sheet that fills it anyway. A wide iPhone window gets a full-width push. Let the size class or `UISheetPresentationController` adapt |
-| `UIViewController.openSettings` (`SettingsButton.swift`) | Reaches the root through `UIApplication.shared.delegate`'s window | Use `view.window?.rootViewController` or the scene |
-| `ArtworkView`, `SettingsViewController` | `traitCollectionDidChange(_:)` | Deprecated since iOS 17. Use `registerForTraitChanges` (17+) or automatic trait tracking in `layoutSubviews` / `viewWillLayoutSubviews` (18+) |
+| `MainTabBarController.showSettings` | Push on iPhone, form sheet on iPad, chosen by idiom. Sheet height = 70% of screen | A narrow iPad window gets a sheet that fills it anyway. A wide iPhone window gets a full-width push. Let the size class or `UISheetPresentationController` adapt || `ArtworkView`, `SettingsViewController` | `traitCollectionDidChange(_:)` | Deprecated since iOS 17. Use `registerForTraitChanges` (17+) or automatic trait tracking in `layoutSubviews` / `viewWillLayoutSubviews` (18+) |
 | `ThemeManager.apply` | Theme applied to `UIApplication.shared.windows` | Should go through the scene's windows (or `windowScene.traitOverrides`) |
 
 ### Layout Diagnostics
@@ -88,7 +90,7 @@ Deep links: `musiclib://explore`, `musiclib://liked`, `musiclib://settings`. Hom
 
 ## Suggested conversion order
 
-1. Scene life cycle: `SceneDelegate`, scene manifest, move URL, shortcut and orientation handling. Remove `UIRequiresFullScreen` and `UIDesignRequiresCompatibility`.
+1. ~~Scene life cycle~~ (done). Remove `UIRequiresFullScreen` and `UIDesignRequiresCompatibility`.
 2. Delete `Device` / `Metrics`, then fix every compile error by asking the container (size class or `bounds`).
 3. Replace frame math (mini player, table header) with Auto Layout against `view.safeAreaLayoutGuide` / `tabBar`.
 4. Move the Explore screen to `UICollectionViewCompositionalLayout`, with columns from `layoutEnvironment.container.effectiveContentSize`.

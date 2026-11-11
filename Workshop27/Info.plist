@@ -2,18 +2,6 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<!--
-	  ⚠️ LEGACY CONFIGURATION (intentional, for the iOS 27 workshop).
-	  - No UIApplicationSceneManifest: the app uses the AppDelegate-only life cycle.
-	    Built with the iOS 27 SDK the app fails to launch.
-	  - UIRequiresFullScreen: opts out of iPad multitasking. Ignored with the iOS 27 SDK.
-	  - UIDesignRequiresCompatibility: opts out of Liquid Glass. Ignored by Xcode 27 builds.
-	  - LSApplicationQueriesSchemes: 30 entries. The iOS 27 SDK caps this at 25.
-	-->
-	<key>UIRequiresFullScreen</key>
-	<true/>
-	<key>UIDesignRequiresCompatibility</key>
-	<true/>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
@@ -23,17 +11,6 @@
 			<array>
 				<string>musiclib</string>
 			</array>
-		</dict>
-	</array>
-	<key>UIApplicationShortcutItems</key>
-	<array>
-		<dict>
-			<key>UIApplicationShortcutItemType</key>
-			<string>$(PRODUCT_BUNDLE_IDENTIFIER).liked</string>
-			<key>UIApplicationShortcutItemTitle</key>
-			<string>Liked Songs</string>
-			<key>UIApplicationShortcutItemIconSymbolName</key>
-			<string>heart.fill</string>
 		</dict>
 	</array>
 	<key>LSApplicationQueriesSchemes</key>
@@ -69,5 +46,35 @@
 		<string>googlechrome</string>
 		<string>firefox</string>
 	</array>
+	<key>UIApplicationSceneManifest</key>
+	<dict>
+		<key>UIApplicationSupportsMultipleScenes</key>
+		<false/>
+		<key>UISceneConfigurations</key>
+		<dict>
+			<key>UIWindowSceneSessionRoleApplication</key>
+			<array>
+				<dict>
+					<key>UISceneConfigurationName</key>
+					<string>Default Configuration</string>
+					<key>UISceneDelegateClassName</key>
+					<string>$(PRODUCT_MODULE_NAME).SceneDelegate</string>
+				</dict>
+			</array>
+		</dict>
+	</dict>
+	<key>UIApplicationShortcutItems</key>
+	<array>
+		<dict>
+			<key>UIApplicationShortcutItemIconSymbolName</key>
+			<string>heart.fill</string>
+			<key>UIApplicationShortcutItemTitle</key>
+			<string>Liked Songs</string>
+			<key>UIApplicationShortcutItemType</key>
+			<string>$(PRODUCT_BUNDLE_IDENTIFIER).liked</string>
+		</dict>
+	</array>
+	<key>UIDesignRequiresCompatibility</key>
+	<true/>
 </dict>
 </plist>
