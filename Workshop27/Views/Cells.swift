@@ -16,13 +16,14 @@ final class PlaylistTileCell: UICollectionViewCell {
     override init(frame: CGRect) {
         super.init(frame: frame)
         contentView.backgroundColor = .secondarySystemBackground
-        contentView.layer.cornerRadius = Metrics.artworkCornerRadius
+        contentView.layer.cornerRadius = Style.artworkCornerRadius
         contentView.clipsToBounds = true
 
         artwork.cornerRadius = 0
         artwork.translatesAutoresizingMaskIntoConstraints = false
         nameLabel.translatesAutoresizingMaskIntoConstraints = false
-        nameLabel.font = Metrics.titleFont
+        nameLabel.font = Style.titleFont
+        nameLabel.adjustsFontForContentSizeCategory = true
         nameLabel.numberOfLines = 2
         contentView.addSubview(artwork)
         contentView.addSubview(nameLabel)
@@ -57,8 +58,10 @@ final class ArtworkCardCell: UICollectionViewCell {
 
     override init(frame: CGRect) {
         super.init(frame: frame)
-        titleLabel.font = Metrics.titleFont
-        subtitleLabel.font = Metrics.subtitleFont
+        titleLabel.font = Style.titleFont
+        titleLabel.adjustsFontForContentSizeCategory = true
+        subtitleLabel.font = Style.subtitleFont
+        subtitleLabel.adjustsFontForContentSizeCategory = true
         subtitleLabel.textColor = .secondaryLabel
         subtitleLabel.numberOfLines = 2
 
@@ -106,12 +109,13 @@ final class SongCell: UITableViewCell {
     override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
         super.init(style: style, reuseIdentifier: reuseIdentifier)
 
-        titleLabel.font = Metrics.titleFont
-        artistLabel.font = Metrics.subtitleFont
+        titleLabel.font = Style.titleFont
+        artistLabel.font = Style.subtitleFont
         artistLabel.textColor = .secondaryLabel
-        albumLabel.font = Metrics.subtitleFont
+        albumLabel.font = Style.subtitleFont
         albumLabel.textColor = .secondaryLabel
-        durationLabel.font = .monospacedDigitSystemFont(ofSize: Metrics.subtitleFont.pointSize, weight: .regular)
+        durationLabel.font = UIFontMetrics(forTextStyle: .footnote).scaledFont(for: .monospacedDigitSystemFont(ofSize: 13, weight: .regular))
+        [titleLabel, artistLabel, albumLabel, durationLabel].forEach { $0.adjustsFontForContentSizeCategory = true }
         durationLabel.textColor = .secondaryLabel
         likeButton.tintColor = .systemPink
         likeButton.addTarget(self, action: #selector(likeTapped), for: .touchUpInside)
@@ -125,29 +129,41 @@ final class SongCell: UITableViewCell {
         row.alignment = .center
         row.spacing = 12
 
-        // ⚠️ BAD PRACTICE: the idiom decides which columns exist. A wide iPhone window
-        // (iPhone Mirroring, iPhone app on iPad) never gets the album/duration columns,
-        // and a narrow iPad window (Split View, Slide Over) gets them squeezed.
-        if Device.isPad {
-            albumLabel.widthAnchor.constraint(equalToConstant: 220).isActive = true
-            durationLabel.widthAnchor.constraint(equalToConstant: 60).isActive = true
-            durationLabel.textAlignment = .right
-            row.addArrangedSubview(albumLabel)
-            row.addArrangedSubview(durationLabel)
-        }
+        // The album and duration columns exist always; `layoutSubviews` shows them when the
+        // row itself is wide enough, whatever the device or window.
+        let albumWidth = albumLabel.widthAnchor.constraint(equalToConstant: 220)
+        albumWidth.priority = .defaultHigh
+        albumWidth.isActive = true
+        durationLabel.widthAnchor.constraint(equalToConstant: 60).isActive = true
+        durationLabel.textAlignment = .right
+        albumLabel.isHidden = true
+        durationLabel.isHidden = true
+        row.addArrangedSubview(albumLabel)
+        row.addArrangedSubview(durationLabel)
         row.addArrangedSubview(likeButton)
 
         row.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(row)
         NSLayoutConstraint.activate([
-            artwork.widthAnchor.constraint(equalToConstant: Metrics.songArtworkSize),
-            artwork.heightAnchor.constraint(equalToConstant: Metrics.songArtworkSize),
+            artwork.widthAnchor.constraint(equalToConstant: Style.songArtworkSize),
+            artwork.heightAnchor.constraint(equalToConstant: Style.songArtworkSize),
             likeButton.widthAnchor.constraint(equalToConstant: 44),
-            row.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: Metrics.horizontalPadding),
-            row.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -Metrics.horizontalPadding + 8),
-            row.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
+            row.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: Style.horizontalPadding),
+            row.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -Style.horizontalPadding + 8),
+            row.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 8),
+            row.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -8),
         ])
         artwork.cornerRadius = 6
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        let showColumns = contentView.bounds.width >= Style.wideRowWidth
+        if albumLabel.isHidden == showColumns {
+            albumLabel.isHidden = !showColumns
+            durationLabel.isHidden = !showColumns
+            setNeedsLayout()
+        }
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }

@@ -29,9 +29,13 @@ final class MainTabBarController: UITabBarController {
             makeTab(SongListViewController(source: .liked), title: "Liked Songs", image: "heart", selected: "heart.fill"),
         ]
 
-        view.addSubview(miniPlayer)
+        // The system positions the accessory relative to the tab bar and keeps the content of
+        // every tab clear of it, wherever the tab bar is and however big the window is.
         let tap = UITapGestureRecognizer(target: self, action: #selector(miniPlayerTapped))
         miniPlayer.addGestureRecognizer(tap)
+        updateMiniPlayer()
+        NotificationCenter.default.addObserver(self, selector: #selector(updateMiniPlayer),
+                                               name: .nowPlayingDidChange, object: nil)
     }
 
     private func makeTab(_ root: UIViewController, title: String, image: String, selected: String) -> UIViewController {
@@ -39,35 +43,15 @@ final class MainTabBarController: UITabBarController {
         nav.navigationBar.prefersLargeTitles = true
         nav.tabBarItem = UITabBarItem(title: title, image: UIImage(systemName: image),
                                       selectedImage: UIImage(systemName: selected))
-        // Leave room for the floating mini player.
-        nav.additionalSafeAreaInsets.bottom = Metrics.miniPlayerHeight + 8
         return nav
     }
 
-    override func viewDidLayoutSubviews() {
-        super.viewDidLayoutSubviews()
-        miniPlayer.frame = miniPlayerFrame()
-    }
-
-    /// ⚠️ BAD PRACTICE: the mini player frame is computed from the *screen* size, the key
-    /// window's safe area and a hard-coded tab bar height. When the window is not the
-    /// size of the screen (iPad windowing, iPhone Mirroring, iPhone Duo) or the tab bar
-    /// changes shape (Liquid Glass), the player ends up in the wrong place.
-    private func miniPlayerFrame() -> CGRect {
-        let height = Metrics.miniPlayerHeight
-        let width = Device.isPad ? min(Device.screenWidth * 0.6, 640) : Device.screenWidth - 16
-        let x = (Device.screenWidth - width) / 2
-        let y = Device.screenHeight - Device.safeAreaBottom - Metrics.tabBarHeight - height - 8
-        return CGRect(x: x, y: y, width: width, height: height)
-    }
-
-    // ⚠️ BAD PRACTICE: reacts to the device orientation instead of the new size.
-    override func viewWillTransition(to size: CGSize, with coordinator: UIViewControllerTransitionCoordinator) {
-        super.viewWillTransition(to: size, with: coordinator)
-        if UIDevice.current.orientation.isLandscape || UIDevice.current.orientation.isPortrait {
-            coordinator.animate(alongsideTransition: { _ in
-                self.miniPlayer.frame = self.miniPlayerFrame()
-            })
+    @objc private func updateMiniPlayer() {
+        let hasSong = PlayerState.shared.current != nil
+        if hasSong, bottomAccessory == nil {
+            bottomAccessory = UITabAccessory(contentView: miniPlayer)
+        } else if !hasSong, bottomAccessory != nil {
+            bottomAccessory = nil
         }
     }
 
@@ -79,13 +63,11 @@ final class MainTabBarController: UITabBarController {
         if nav.topViewController is SettingsViewController { return }
         let settings = SettingsViewController()
 
-        // ⚠️ BAD PRACTICE: the idiom decides the presentation style. A narrow iPad window
-        // gets a form sheet that fills it anyway; a wide iPhone window gets a full-width push.
-        // Let the size class / UISheetPresentationController adapt instead.
-        if Device.isPad {
+        // Regular width has room for a form sheet; compact width pushes. The size class
+        // describes the space this window has, which the device idiom does not.
+        if traitCollection.horizontalSizeClass == .regular {
             let modal = UINavigationController(rootViewController: settings)
             modal.modalPresentationStyle = .formSheet
-            modal.preferredContentSize = CGSize(width: Metrics.settingsMaxWidth, height: Device.screenHeight * 0.7)
             present(modal, animated: true)
         } else {
             nav.pushViewController(settings, animated: true)

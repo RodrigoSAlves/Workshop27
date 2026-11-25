@@ -13,7 +13,7 @@ final class ArtworkView: UIView {
     private let symbolView = UIImageView()
     private var palette = 0
 
-    var cornerRadius: CGFloat = Metrics.artworkCornerRadius {
+    var cornerRadius: CGFloat = Style.artworkCornerRadius {
         didSet { layer.cornerRadius = cornerRadius }
     }
 
@@ -21,8 +21,6 @@ final class ArtworkView: UIView {
         super.init(frame: frame)
         clipsToBounds = true
         layer.cornerRadius = cornerRadius
-        // ⚠️ BAD PRACTICE: hairline from UIScreen.main.scale.
-        layer.borderWidth = Device.hairline
 
         gradient.startPoint = CGPoint(x: 0, y: 0)
         gradient.endPoint = CGPoint(x: 1, y: 1)
@@ -38,7 +36,7 @@ final class ArtworkView: UIView {
             symbolView.widthAnchor.constraint(equalTo: widthAnchor, multiplier: 0.42),
             symbolView.heightAnchor.constraint(equalTo: symbolView.widthAnchor),
         ])
-        applyColors()
+        setNeedsUpdateProperties()
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -46,7 +44,7 @@ final class ArtworkView: UIView {
     func configure(palette: Int, symbol: String) {
         self.palette = palette
         symbolView.image = UIImage(systemName: symbol)
-        applyColors()
+        setNeedsUpdateProperties()
     }
 
     override func layoutSubviews() {
@@ -57,13 +55,12 @@ final class ArtworkView: UIView {
         CATransaction.commit()
     }
 
-    // ⚠️ BAD PRACTICE: traitCollectionDidChange(_:) is deprecated since iOS 17.
-    // Use registerForTraitChanges(_:handler:) or automatic trait tracking (iOS 18+).
-    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
-        super.traitCollectionDidChange(previousTraitCollection)
-        if traitCollection.hasDifferentColorAppearance(comparedTo: previousTraitCollection) {
-            applyColors()
-        }
+    /// Reads `traitCollection`, so UIKit re-runs it automatically when the appearance or
+    /// the display scale changes (iOS 26+). No manual trait observation needed.
+    override func updateProperties() {
+        super.updateProperties()
+        layer.borderWidth = 1 / traitCollection.displayScale
+        applyColors()
     }
 
     private func applyColors() {

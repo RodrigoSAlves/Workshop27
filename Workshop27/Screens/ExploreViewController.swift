@@ -3,27 +3,42 @@
 //  Workshop27
 //
 //  Music lobby: featured banner, favourite playlists, new songs, mixes, recently played.
+//  One collection view with a compositional layout. Every size is derived from the
+//  container the layout is given, so it follows the window as it is resized.
 //
 
 import UIKit
 
 final class ExploreViewController: UIViewController {
 
+    private enum Section: Int, CaseIterable {
+        case banner, favorites, newSongs, mixes, recent
+
+        var title: String? {
+            switch self {
+            case .banner: return nil
+            case .favorites: return "Your Favorite Playlists"
+            case .newSongs: return "New Songs"
+            case .mixes: return "Made For You"
+            case .recent: return "Recently Played"
+            }
+        }
+    }
+
     private let library = MusicLibrary.shared
 
-    private let scrollView = UIScrollView()
-    private let contentStack = UIStackView()
+    private lazy var collectionView = UICollectionView(frame: .zero, collectionViewLayout: makeLayout())
 
-    private let banner = FeaturedBannerView()
-    private var bannerHeight: NSLayoutConstraint!
-
-    private let favoritesLayout = UICollectionViewFlowLayout()
-    private lazy var favoritesGrid = UICollectionView(frame: .zero, collectionViewLayout: favoritesLayout)
-    private var favoritesHeight: NSLayoutConstraint!
-
-    private lazy var newSongsRail = HorizontalRailView(title: "New Songs") { Metrics.songCardWidth }
-    private lazy var mixesRail = HorizontalRailView(title: "Made For You") { Metrics.mixCardWidth }
-    private lazy var recentRail = HorizontalRailView(title: "Recently Played") { Metrics.songCardWidth }
+    // Registrations are created once, up front. Creating them while dequeuing is an error.
+    private var bannerRegistration: UICollectionView.CellRegistration<BannerCell, Playlist>!
+    private let tileRegistration = UICollectionView.CellRegistration<PlaylistTileCell, Playlist> { cell, _, playlist in
+        cell.configure(with: playlist)
+    }
+    private let cardRegistration = UICollectionView.CellRegistration<ArtworkCardCell, RailItem> { cell, _, item in
+        cell.configure(title: item.title, subtitle: item.subtitle, palette: item.palette, symbol: item.symbol)
+    }
+    private let headerRegistration = UICollectionView.SupplementaryRegistration<SectionTitleView>(
+        elementKind: UICollectionView.elementKindSectionHeader) { _, _, _ in }
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -31,141 +46,107 @@ final class ExploreViewController: UIViewController {
         installSettingsButton()
         view.backgroundColor = .systemBackground
 
-        setUpScrollView()
-        setUpBanner()
-        setUpFavorites()
-        setUpRails()
-        applyLayoutForCurrentDevice()
+        bannerRegistration = UICollectionView.CellRegistration<BannerCell, Playlist> { [weak self] cell, _, mix in
+            cell.banner.configure(title: mix.name, subtitle: "Fresh picks updated every Monday",
+                                  palette: mix.palette, symbol: mix.symbol)
+            cell.banner.onListen = { self?.open(mix) }
+        }
 
-        NotificationCenter.default.addObserver(self, selector: #selector(applyLayoutForCurrentDevice),
-                                               name: .appDidRefreshLayout, object: nil)
-    }
-
-    // MARK: - Setup
-
-    private func setUpScrollView() {
-        scrollView.alwaysBounceVertical = true
-        contentStack.axis = .vertical
-        contentStack.spacing = Metrics.sectionSpacing
-
-        scrollView.translatesAutoresizingMaskIntoConstraints = false
-        contentStack.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(scrollView)
-        scrollView.addSubview(contentStack)
-
+        collectionView.translatesAutoresizingMaskIntoConstraints = false
+        collectionView.backgroundColor = .clear
+        collectionView.alwaysBounceVertical = true
+        collectionView.dataSource = self
+        collectionView.delegate = self
+        view.addSubview(collectionView)
         NSLayoutConstraint.activate([
-            scrollView.topAnchor.constraint(equalTo: view.topAnchor),
-            scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            scrollView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            contentStack.topAnchor.constraint(equalTo: scrollView.contentLayoutGuide.topAnchor, constant: 8),
-            contentStack.leadingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.leadingAnchor),
-            contentStack.trailingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.trailingAnchor),
-            contentStack.bottomAnchor.constraint(equalTo: scrollView.contentLayoutGuide.bottomAnchor, constant: -24),
-            // ⚠️ BAD PRACTICE: content width pinned to the screen width, not the scroll view.
-            contentStack.widthAnchor.constraint(equalToConstant: Device.screenWidth),
+            collectionView.topAnchor.constraint(equalTo: view.topAnchor),
+            collectionView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            collectionView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            collectionView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
     }
 
-    private func setUpBanner() {
-        let mix = library.madeForYou[2]
-        banner.configure(title: mix.name, subtitle: "Fresh picks updated every Monday",
-                         palette: mix.palette, symbol: mix.symbol)
-        banner.onListen = { [weak self] in self?.open(mix) }
+    // MARK: - Layout
 
-        let container = UIView()
-        banner.translatesAutoresizingMaskIntoConstraints = false
-        container.addSubview(banner)
-        bannerHeight = banner.heightAnchor.constraint(equalToConstant: Metrics.heroHeight)
-        NSLayoutConstraint.activate([
-            banner.topAnchor.constraint(equalTo: container.topAnchor),
-            banner.bottomAnchor.constraint(equalTo: container.bottomAnchor),
-            banner.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: Metrics.horizontalPadding),
-            banner.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -Metrics.horizontalPadding),
-            bannerHeight,
-        ])
-        contentStack.addArrangedSubview(container)
+    private func makeLayout() -> UICollectionViewLayout {
+        UICollectionViewCompositionalLayout { [weak self] index, environment in
+            guard let section = Section(rawValue: index) else { return nil }
+            return self?.layoutSection(section, width: environment.container.effectiveContentSize.width)
+        }
     }
 
-    private func setUpFavorites() {
-        let title = UILabel()
-        title.text = "Your Favorite Playlists"
-        title.font = Metrics.sectionTitleFont
+    /// Sections are sized from the width of the container they are laid out in.
+    private func layoutSection(_ section: Section, width: CGFloat) -> NSCollectionLayoutSection {
+        let layoutSection: NSCollectionLayoutSection
+        let pad = Style.horizontalPadding
 
-        favoritesLayout.minimumInteritemSpacing = Metrics.interItemSpacing / 1.5
-        favoritesLayout.minimumLineSpacing = Metrics.interItemSpacing / 1.5
-        favoritesGrid.isScrollEnabled = false
-        favoritesGrid.backgroundColor = .clear
-        favoritesGrid.dataSource = self
-        favoritesGrid.delegate = self
-        favoritesGrid.register(PlaylistTileCell.self, forCellWithReuseIdentifier: PlaylistTileCell.reuseID)
-        favoritesHeight = favoritesGrid.heightAnchor.constraint(equalToConstant: 0)
-        favoritesHeight.isActive = true
+        switch section {
+        case .banner:
+            let height = min(max(width * 0.4, 150), 300)
+            let item = NSCollectionLayoutItem(layoutSize: .init(widthDimension: .fractionalWidth(1),
+                                                                heightDimension: .fractionalHeight(1)))
+            let group = NSCollectionLayoutGroup.horizontal(layoutSize: .init(widthDimension: .fractionalWidth(1),
+                                                                             heightDimension: .absolute(height)),
+                                                           subitems: [item])
+            layoutSection = NSCollectionLayoutSection(group: group)
+            layoutSection.contentInsets = .init(top: 8, leading: pad, bottom: Style.sectionSpacing, trailing: pad)
 
-        let section = UIStackView(arrangedSubviews: [title, favoritesGrid])
-        section.axis = .vertical
-        section.spacing = 12
-        section.isLayoutMarginsRelativeArrangement = true
-        section.directionalLayoutMargins = NSDirectionalEdgeInsets(top: 0, leading: Metrics.horizontalPadding,
-                                                                   bottom: 0, trailing: Metrics.horizontalPadding)
-        contentStack.addArrangedSubview(section)
+        case .favorites:
+            let columns = width < 500 ? 2 : (width < 800 ? 3 : 4)
+            let item = NSCollectionLayoutItem(layoutSize: .init(widthDimension: .fractionalWidth(1 / CGFloat(columns)),
+                                                                heightDimension: .fractionalHeight(1)))
+            let group = NSCollectionLayoutGroup.horizontal(layoutSize: .init(widthDimension: .fractionalWidth(1),
+                                                                             heightDimension: .absolute(60)),
+                                                           repeatingSubitem: item, count: columns)
+            let spacing = Style.interItemSpacing / 1.5
+            group.interItemSpacing = .fixed(spacing)
+            layoutSection = NSCollectionLayoutSection(group: group)
+            layoutSection.interGroupSpacing = spacing
+            layoutSection.contentInsets = .init(top: 12, leading: pad, bottom: Style.sectionSpacing, trailing: pad)
+
+        case .newSongs, .recent:
+            layoutSection = railSection(cardWidth: min(max(width * 0.36, 140), 200))
+
+        case .mixes:
+            layoutSection = railSection(cardWidth: min(max(width * 0.62, 220), 300))
+        }
+
+        if section.title != nil {
+            let header = NSCollectionLayoutBoundarySupplementaryItem(
+                layoutSize: .init(widthDimension: .fractionalWidth(1), heightDimension: .estimated(32)),
+                elementKind: UICollectionView.elementKindSectionHeader, alignment: .top)
+            header.contentInsets = .init(top: 0, leading: -pad, bottom: 0, trailing: -pad)
+            layoutSection.boundarySupplementaryItems = [header]
+        }
+        return layoutSection
     }
 
-    private func setUpRails() {
-        newSongsRail.setItems(library.newReleases.map(railItem))
-        newSongsRail.onSelect = { [weak self] index in
-            guard let self else { return }
-            SongActions.present(for: self.library.newReleases[index], from: self)
-        }
-
-        mixesRail.setItems(library.madeForYou.map {
-            RailItem(title: $0.name, subtitle: $0.subtitle, palette: $0.palette, symbol: $0.symbol)
-        })
-        mixesRail.onSelect = { [weak self] index in
-            guard let self else { return }
-            self.open(self.library.madeForYou[index])
-        }
-
-        recentRail.setItems(library.recentlyPlayed.map(railItem))
-        recentRail.onSelect = { [weak self] index in
-            guard let self else { return }
-            SongActions.present(for: self.library.recentlyPlayed[index], from: self)
-        }
-
-        [newSongsRail, mixesRail, recentRail].forEach(contentStack.addArrangedSubview)
+    private func railSection(cardWidth: CGFloat) -> NSCollectionLayoutSection {
+        // Square artwork plus the title and two subtitle lines, which grow with Dynamic Type.
+        let height = NSCollectionLayoutDimension.estimated(cardWidth + 64)
+        let item = NSCollectionLayoutItem(layoutSize: .init(widthDimension: .fractionalWidth(1), heightDimension: height))
+        let group = NSCollectionLayoutGroup.horizontal(layoutSize: .init(widthDimension: .absolute(cardWidth),
+                                                                         heightDimension: height),
+                                                       subitems: [item])
+        let section = NSCollectionLayoutSection(group: group)
+        section.orthogonalScrollingBehavior = .continuous
+        section.interGroupSpacing = Style.interItemSpacing
+        section.contentInsets = .init(top: 12, leading: Style.horizontalPadding, bottom: Style.sectionSpacing,
+                                      trailing: Style.horizontalPadding)
+        return section
     }
+
+    // MARK: - Content
 
     private func railItem(_ song: Song) -> RailItem {
         RailItem(title: song.title, subtitle: song.artist, palette: song.palette, symbol: song.symbol)
     }
 
-    // MARK: - Layout
-
-    /// ⚠️ BAD PRACTICE: every size on this screen comes from the idiom, the main screen
-    /// and the orientation. It is only re-run on rotation, never when the window resizes.
-    @objc private func applyLayoutForCurrentDevice() {
-        bannerHeight.constant = Metrics.heroHeight
-
-        let columns = CGFloat(Metrics.favoriteColumns)
-        let available = Device.screenWidth - Metrics.horizontalPadding * 2
-            - favoritesLayout.minimumInteritemSpacing * (columns - 1)
-        let itemWidth = floor(available / columns)
-        favoritesLayout.itemSize = CGSize(width: itemWidth, height: Metrics.favoriteTileHeight)
-        let rows = ceil(CGFloat(library.favoritePlaylists.count) / columns)
-        favoritesHeight.constant = rows * Metrics.favoriteTileHeight + (rows - 1) * favoritesLayout.minimumLineSpacing
-        favoritesLayout.invalidateLayout()
-
-        [newSongsRail, mixesRail, recentRail].forEach { $0.relayout() }
+    private func railItem(_ mix: Playlist) -> RailItem {
+        RailItem(title: mix.name, subtitle: mix.subtitle, palette: mix.palette, symbol: mix.symbol)
     }
 
-    // ⚠️ BAD PRACTICE: deciding on orientation and ignoring `size`.
-    override func viewWillTransition(to size: CGSize, with coordinator: UIViewControllerTransitionCoordinator) {
-        super.viewWillTransition(to: size, with: coordinator)
-        coordinator.animate(alongsideTransition: { _ in
-            self.applyLayoutForCurrentDevice()
-            self.view.layoutIfNeeded()
-        })
-    }
+    private var featuredMix: Playlist { library.madeForYou[2] }
 
     // MARK: - Navigation
 
@@ -182,21 +163,104 @@ final class ExploreViewController: UIViewController {
     }
 }
 
+// MARK: - Data source and selection
+
 extension ExploreViewController: UICollectionViewDataSource, UICollectionViewDelegate {
+
+    func numberOfSections(in collectionView: UICollectionView) -> Int { Section.allCases.count }
+
     func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int {
-        library.favoritePlaylists.count
+        switch Section(rawValue: section)! {
+        case .banner: return 1
+        case .favorites: return library.favoritePlaylists.count
+        case .newSongs: return library.newReleases.count
+        case .mixes: return library.madeForYou.count
+        case .recent: return library.recentlyPlayed.count
+        }
     }
 
     func collectionView(_ collectionView: UICollectionView, cellForItemAt indexPath: IndexPath) -> UICollectionViewCell {
-        let cell = collectionView.dequeueReusableCell(withReuseIdentifier: PlaylistTileCell.reuseID,
-                                                      for: indexPath) as! PlaylistTileCell
-        cell.configure(with: library.favoritePlaylists[indexPath.item])
-        return cell
+        switch Section(rawValue: indexPath.section)! {
+        case .banner:
+            return collectionView.dequeueConfiguredReusableCell(using: bannerRegistration, for: indexPath, item: featuredMix)
+        case .favorites:
+            return collectionView.dequeueConfiguredReusableCell(using: tileRegistration, for: indexPath,
+                                                                item: library.favoritePlaylists[indexPath.item])
+        case .newSongs:
+            return collectionView.dequeueConfiguredReusableCell(using: cardRegistration, for: indexPath,
+                                                                item: railItem(library.newReleases[indexPath.item]))
+        case .mixes:
+            return collectionView.dequeueConfiguredReusableCell(using: cardRegistration, for: indexPath,
+                                                                item: railItem(library.madeForYou[indexPath.item]))
+        case .recent:
+            return collectionView.dequeueConfiguredReusableCell(using: cardRegistration, for: indexPath,
+                                                                item: railItem(library.recentlyPlayed[indexPath.item]))
+        }
+    }
+
+    func collectionView(_ collectionView: UICollectionView, viewForSupplementaryElementOfKind kind: String,
+                        at indexPath: IndexPath) -> UICollectionReusableView {
+        let header = collectionView.dequeueConfiguredReusableSupplementary(using: headerRegistration, for: indexPath)
+        header.titleLabel.text = Section(rawValue: indexPath.section)?.title
+        return header
     }
 
     func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
-        open(library.favoritePlaylists[indexPath.item])
+        switch Section(rawValue: indexPath.section)! {
+        case .banner: break
+        case .favorites: open(library.favoritePlaylists[indexPath.item])
+        case .newSongs: SongActions.present(for: library.newReleases[indexPath.item], from: self)
+        case .mixes: open(library.madeForYou[indexPath.item])
+        case .recent: SongActions.present(for: library.recentlyPlayed[indexPath.item], from: self)
+        }
     }
+}
+
+// MARK: - Supporting views
+
+struct RailItem {
+    let title: String
+    let subtitle: String
+    let palette: Int
+    let symbol: String
+}
+
+final class BannerCell: UICollectionViewCell {
+    let banner = FeaturedBannerView()
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        banner.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(banner)
+        NSLayoutConstraint.activate([
+            banner.topAnchor.constraint(equalTo: contentView.topAnchor),
+            banner.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+            banner.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+            banner.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+        ])
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+}
+
+final class SectionTitleView: UICollectionReusableView {
+    let titleLabel = UILabel()
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        titleLabel.font = Style.sectionTitleFont
+        titleLabel.adjustsFontForContentSizeCategory = true
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(titleLabel)
+        NSLayoutConstraint.activate([
+            titleLabel.topAnchor.constraint(equalTo: topAnchor),
+            titleLabel.bottomAnchor.constraint(equalTo: bottomAnchor),
+            titleLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: Style.horizontalPadding),
+            titleLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -Style.horizontalPadding),
+        ])
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 }
 
 // MARK: - Featured banner
@@ -217,10 +281,14 @@ final class FeaturedBannerView: UIView {
         eyebrow.text = "FEATURED"
         eyebrow.font = .systemFont(ofSize: 12, weight: .bold)
         eyebrow.textColor = UIColor.white.withAlphaComponent(0.8)
-        // ⚠️ BAD PRACTICE: font sizes by idiom and by device model.
-        titleLabel.font = .systemFont(ofSize: Device.isPad ? 40 : (Device.isSmallPhone ? 24 : 30), weight: .heavy)
+        titleLabel.font = Style.heroTitleFont
+        titleLabel.adjustsFontForContentSizeCategory = true
+        titleLabel.numberOfLines = 2
+        titleLabel.adjustsFontSizeToFitWidth = true
+        titleLabel.minimumScaleFactor = 0.7
         titleLabel.textColor = .white
-        subtitleLabel.font = Metrics.subtitleFont
+        subtitleLabel.font = Style.subtitleFont
+        subtitleLabel.adjustsFontForContentSizeCategory = true
         subtitleLabel.textColor = UIColor.white.withAlphaComponent(0.85)
 
         var config = UIButton.Configuration.filled()
