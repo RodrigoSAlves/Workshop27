@@ -2,8 +2,8 @@
 //  MiniPlayerView.swift
 //  Workshop27
 //
-//  Floating "now playing" bar above the tab bar. Positioned with a manual frame
-//  by MainTabBarController (see the bad practices there).
+//  "Now playing" content shown in the tab bar controller's bottom accessory.
+//  The system places and styles the accessory, so this view only lays out its content.
 //
 
 import UIKit
@@ -15,18 +15,15 @@ final class MiniPlayerView: UIView {
     private let artistLabel = UILabel()
     private let playButton = UIButton(type: .system)
     private let progress = UIView()
+    private var progressHeight: NSLayoutConstraint!
 
     override init(frame: CGRect) {
         super.init(frame: frame)
-        backgroundColor = .tertiarySystemBackground
-        layer.cornerRadius = 12
-        layer.shadowOpacity = 0.18
-        layer.shadowRadius = 12
-        layer.shadowOffset = CGSize(width: 0, height: 4)
 
         titleLabel.font = Metrics.titleFont
         artistLabel.font = Metrics.subtitleFont
         artistLabel.textColor = .secondaryLabel
+        [titleLabel, artistLabel].forEach { $0.adjustsFontForContentSizeCategory = true }
         playButton.tintColor = .label
         playButton.addTarget(self, action: #selector(togglePlay), for: .touchUpInside)
         progress.backgroundColor = .systemPink
@@ -42,10 +39,11 @@ final class MiniPlayerView: UIView {
             $0.translatesAutoresizingMaskIntoConstraints = false
             addSubview($0)
         }
-        let artworkSize = Metrics.miniPlayerHeight - 16
+        progressHeight = progress.heightAnchor.constraint(equalToConstant: 2 / traitCollection.displayScale)
         NSLayoutConstraint.activate([
-            artwork.widthAnchor.constraint(equalToConstant: artworkSize),
-            artwork.heightAnchor.constraint(equalToConstant: artworkSize),
+            // Artwork follows the height the accessory gives us.
+            artwork.heightAnchor.constraint(equalTo: heightAnchor, constant: -12),
+            artwork.widthAnchor.constraint(equalTo: artwork.heightAnchor),
             playButton.widthAnchor.constraint(equalToConstant: 44),
             row.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
             row.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
@@ -53,9 +51,13 @@ final class MiniPlayerView: UIView {
             progress.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
             progress.bottomAnchor.constraint(equalTo: bottomAnchor),
             progress.widthAnchor.constraint(equalTo: widthAnchor, multiplier: 0.35),
-            // ⚠️ BAD PRACTICE: hairline from UIScreen.main.scale.
-            progress.heightAnchor.constraint(equalToConstant: Device.hairline * 2),
+            progressHeight,
         ])
+
+        // Two physical pixels: recompute when the display scale changes (another display).
+        registerForTraitChanges([UITraitDisplayScale.self]) { (self: MiniPlayerView, _) in
+            self.progressHeight.constant = 2 / self.traitCollection.displayScale
+        }
 
         NotificationCenter.default.addObserver(self, selector: #selector(refresh),
                                                name: .nowPlayingDidChange, object: nil)
@@ -63,11 +65,6 @@ final class MiniPlayerView: UIView {
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
-
-    override func layoutSubviews() {
-        super.layoutSubviews()
-        layer.shadowPath = UIBezierPath(roundedRect: bounds, cornerRadius: layer.cornerRadius).cgPath
-    }
 
     @objc private func refresh() {
         let state = PlayerState.shared
@@ -78,7 +75,7 @@ final class MiniPlayerView: UIView {
         artistLabel.text = song.artist
         let symbol = state.isPlaying ? "pause.fill" : "play.fill"
         playButton.setImage(UIImage(systemName: symbol,
-                                    withConfiguration: UIImage.SymbolConfiguration(pointSize: 20)), for: .normal)
+                                    withConfiguration: UIImage.SymbolConfiguration(textStyle: .title3)), for: .normal)
     }
 
     @objc private func togglePlay() {

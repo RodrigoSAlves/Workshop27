@@ -8,7 +8,10 @@ import UIKit
 enum SongActions {
 
     /// Presents Play / Like actions for a song.
-    static func present(for song: Song, from viewController: UIViewController) {
+    /// - Parameter sourceItem: the view or bar item the user tapped. When the sheet is
+    ///   shown as a popover (regular width), it points at this item.
+    static func present(for song: Song, from viewController: UIViewController,
+                        sourceItem: UIPopoverPresentationControllerSourceItem? = nil) {
         let library = MusicLibrary.shared
         let sheet = UIAlertController(title: song.title, message: song.artist, preferredStyle: .actionSheet)
         sheet.addAction(UIAlertAction(title: "Play", style: .default) { _ in
@@ -20,13 +23,17 @@ enum SongActions {
         })
         sheet.addAction(UIAlertAction(title: "Cancel", style: .cancel))
 
-        // ⚠️ BAD PRACTICE: the popover is anchored to the centre of the *screen* only when
-        // the idiom is pad. An iPhone app in a wide window, or an iPad window that is not
-        // full screen, anchors to the wrong place (or crashes if the idiom check is wrong).
-        if Device.isPad, let popover = sheet.popoverPresentationController {
-            popover.sourceView = viewController.view
-            popover.sourceRect = CGRect(x: Device.screenWidth / 2, y: Device.screenHeight / 2, width: 1, height: 1)
-            popover.permittedArrowDirections = []
+        // UIKit decides whether the sheet becomes a popover from the size class of the
+        // presenting context. Always give it an anchor; it is ignored when not needed.
+        if let popover = sheet.popoverPresentationController {
+            if let sourceItem {
+                popover.sourceItem = sourceItem
+            } else {
+                let view: UIView = viewController.view
+                popover.sourceView = view
+                popover.sourceRect = CGRect(x: view.bounds.midX, y: view.bounds.midY, width: 1, height: 1)
+                popover.permittedArrowDirections = []
+            }
         }
         viewController.present(sheet, animated: true)
     }
