@@ -37,9 +37,9 @@ final class SongListViewController: UITableViewController {
         }
 
         tableView.register(SongCell.self, forCellReuseIdentifier: SongCell.reuseID)
-        // ⚠️ BAD PRACTICE: row height by idiom.
-        tableView.rowHeight = Metrics.songRowHeight
-        tableView.separatorInset.left = Metrics.horizontalPadding + Metrics.songArtworkSize + 12
+        tableView.rowHeight = UITableView.automaticDimension
+        tableView.estimatedRowHeight = 62
+        tableView.separatorInset.left = Style.horizontalPadding + Style.songArtworkSize + 12
 
         reloadSongs()
         installHeader()
@@ -66,16 +66,10 @@ final class SongListViewController: UITableViewController {
 
     // MARK: - Header
 
-    /// ⚠️ BAD PRACTICE: frame-based table header sized from the screen, and hidden
-    /// entirely when the device is in landscape.
+    /// Self-sizing Auto Layout header. Its height follows the table's width, see
+    /// `viewDidLayoutSubviews`, so it adapts to any window size.
     private func installHeader() {
-        if Device.isLandscape && Device.isPhone {
-            tableView.tableHeaderView = nil
-            return
-        }
-        let header = SongListHeaderView(frame: CGRect(x: 0, y: 0,
-                                                      width: Device.screenWidth,
-                                                      height: Metrics.listHeaderHeight))
+        let header = SongListHeaderView()
         switch source {
         case .liked:
             header.configure(title: "Liked Songs", subtitle: "Songs you love, all in one place",
@@ -95,11 +89,16 @@ final class SongListViewController: UITableViewController {
         tableView.tableHeaderView = header
     }
 
-    // ⚠️ BAD PRACTICE: header rebuilt from the orientation, `size` ignored.
-    override func viewWillTransition(to size: CGSize, with coordinator: UIViewControllerTransitionCoordinator) {
-        super.viewWillTransition(to: size, with: coordinator)
-        coordinator.animate(alongsideTransition: nil) { _ in
-            self.installHeader()
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        guard let header = tableView.tableHeaderView else { return }
+        let width = tableView.bounds.width
+        let size = header.systemLayoutSizeFitting(CGSize(width: width, height: UIView.layoutFittingCompressedSize.height),
+                                                  withHorizontalFittingPriority: .required,
+                                                  verticalFittingPriority: .fittingSizeLevel)
+        if header.frame.size != CGSize(width: width, height: size.height) {
+            header.frame.size = CGSize(width: width, height: size.height)
+            tableView.tableHeaderView = header
         }
     }
 
@@ -110,7 +109,8 @@ final class SongListViewController: UITableViewController {
         label.numberOfLines = 0
         label.textAlignment = .center
         label.textColor = .secondaryLabel
-        label.font = Metrics.titleFont
+        label.font = Style.titleFont
+        label.adjustsFontForContentSizeCategory = true
         tableView.backgroundView = label
     }
 
@@ -159,17 +159,29 @@ final class SongListHeaderView: UIView {
     private let titleLabel = UILabel()
     private let subtitleLabel = UILabel()
     private let countLabel = UILabel()
+    private let main = UIStackView()
+    private let text = UIStackView()
+    private let artworkSize: NSLayoutConstraint
+
+    /// Applied at compact width: centered column, text as wide as the header.
+    private var compactConstraints: [NSLayoutConstraint] = []
+    /// Applied at regular width: artwork and text side by side, leading aligned.
+    private var regularConstraints: [NSLayoutConstraint] = []
 
     override init(frame: CGRect) {
+        artworkSize = artwork.widthAnchor.constraint(equalToConstant: 200)
         super.init(frame: frame)
+        directionalLayoutMargins = NSDirectionalEdgeInsets(top: 16, leading: Style.horizontalPadding,
+                                                           bottom: 16, trailing: Style.horizontalPadding)
         artwork.cornerRadius = 16
-        titleLabel.font = .systemFont(ofSize: Device.isPad ? 34 : 24, weight: .heavy)
+        titleLabel.font = Style.headerTitleFont
         titleLabel.numberOfLines = 2
-        subtitleLabel.font = Metrics.subtitleFont
+        subtitleLabel.font = Style.subtitleFont
         subtitleLabel.textColor = .secondaryLabel
         subtitleLabel.numberOfLines = 2
-        countLabel.font = Metrics.subtitleFont
+        countLabel.font = Style.subtitleFont
         countLabel.textColor = .secondaryLabel
+        [titleLabel, subtitleLabel, countLabel].forEach { $0.adjustsFontForContentSizeCategory = true }
 
         let play = makeButton(title: "Play", symbol: "play.fill", filled: true, action: #selector(playTapped))
         let shuffle = makeButton(title: "Shuffle", symbol: "shuffle", filled: false, action: #selector(shuffleTapped))
@@ -177,39 +189,57 @@ final class SongListHeaderView: UIView {
         buttons.spacing = 12
         buttons.distribution = .fillEqually
 
-        let text = UIStackView(arrangedSubviews: [titleLabel, subtitleLabel, countLabel, buttons])
+        text.addArrangedSubview(titleLabel)
+        text.addArrangedSubview(subtitleLabel)
+        text.addArrangedSubview(countLabel)
+        text.addArrangedSubview(buttons)
         text.axis = .vertical
         text.spacing = 6
         text.setCustomSpacing(16, after: countLabel)
 
-        // ⚠️ BAD PRACTICE: the idiom decides between side-by-side and stacked layout.
-        let main = UIStackView(arrangedSubviews: [artwork, text])
-        main.axis = Device.isPad ? .horizontal : .vertical
-        main.alignment = Device.isPad ? .center : .center
-        main.spacing = Device.isPad ? 28 : 16
-        if Device.isPhone {
-            titleLabel.textAlignment = .center
-            subtitleLabel.textAlignment = .center
-            countLabel.textAlignment = .center
-            buttons.widthAnchor.constraint(equalToConstant: Device.screenWidth - Metrics.horizontalPadding * 2).isActive = true
-        }
+        main.addArrangedSubview(artwork)
+        main.addArrangedSubview(text)
+        main.alignment = .center
 
         main.translatesAutoresizingMaskIntoConstraints = false
+        artwork.translatesAutoresizingMaskIntoConstraints = false
         addSubview(main)
-        let size = Metrics.listHeaderArtworkSize
+
+        let widthCap = artwork.widthAnchor.constraint(lessThanOrEqualTo: layoutMarginsGuide.widthAnchor)
+        artworkSize.priority = .defaultHigh
         NSLayoutConstraint.activate([
-            artwork.widthAnchor.constraint(equalToConstant: size),
-            artwork.heightAnchor.constraint(equalToConstant: size),
-            main.leadingAnchor.constraint(equalTo: leadingAnchor, constant: Metrics.horizontalPadding),
-            main.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -Metrics.horizontalPadding),
-            main.centerYAnchor.constraint(equalTo: centerYAnchor),
+            artworkSize,
+            widthCap,
+            artwork.heightAnchor.constraint(equalTo: artwork.widthAnchor),
+            main.topAnchor.constraint(equalTo: layoutMarginsGuide.topAnchor),
+            main.bottomAnchor.constraint(equalTo: layoutMarginsGuide.bottomAnchor),
         ])
-        if Device.isPhone {
-            main.centerXAnchor.constraint(equalTo: centerXAnchor).isActive = true
-        }
+        compactConstraints = [
+            main.leadingAnchor.constraint(equalTo: layoutMarginsGuide.leadingAnchor),
+            main.trailingAnchor.constraint(equalTo: layoutMarginsGuide.trailingAnchor),
+            text.widthAnchor.constraint(equalTo: main.widthAnchor),
+        ]
+        regularConstraints = [
+            main.leadingAnchor.constraint(equalTo: layoutMarginsGuide.leadingAnchor),
+            main.trailingAnchor.constraint(lessThanOrEqualTo: layoutMarginsGuide.trailingAnchor),
+        ]
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    /// Reads the size class from this view's own trait collection. UIKit re-runs this when it
+    /// changes (iOS 26+), so the header re-arranges itself when the window is resized.
+    override func updateProperties() {
+        super.updateProperties()
+        let regular = traitCollection.horizontalSizeClass == .regular
+        main.axis = regular ? .horizontal : .vertical
+        main.spacing = regular ? 28 : 16
+        artworkSize.constant = regular ? 220 : 200
+        let alignment: NSTextAlignment = regular ? .natural : .center
+        [titleLabel, subtitleLabel, countLabel].forEach { $0.textAlignment = alignment }
+        NSLayoutConstraint.deactivate(regular ? compactConstraints : regularConstraints)
+        NSLayoutConstraint.activate(regular ? regularConstraints : compactConstraints)
+    }
 
     func configure(title: String, subtitle: String, palette: Int, symbol: String, count: Int) {
         artwork.configure(palette: palette, symbol: symbol)

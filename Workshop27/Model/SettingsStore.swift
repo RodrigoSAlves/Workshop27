@@ -60,7 +60,7 @@ final class SettingsStore {
         get { AppTheme(rawValue: defaults.integer(forKey: "theme")) ?? .system }
         set {
             defaults.set(newValue.rawValue, forKey: "theme")
-            ThemeManager.apply(newValue)
+            NotificationCenter.default.post(name: .themeDidChange, object: nil)
         }
     }
 
@@ -75,10 +75,7 @@ final class SettingsStore {
     }
 }
 
-enum ThemeManager {
-    /// ⚠️ BAD PRACTICE: reaches every window through the deprecated
-    /// `UIApplication.shared.windows` instead of the scene's own windows.
-    static func apply(_ theme: AppTheme) {
-        UIApplication.shared.windows.forEach { $0.overrideUserInterfaceStyle = theme.style }
-    }
+extension Notification.Name {
+    /// Posted when the theme changes. Each scene applies it to its own window.
+    static let themeDidChange = Notification.Name("themeDidChange")
 }

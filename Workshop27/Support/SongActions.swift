@@ -20,12 +20,12 @@ enum SongActions {
         })
         sheet.addAction(UIAlertAction(title: "Cancel", style: .cancel))
 
-        // ⚠️ BAD PRACTICE: the popover is anchored to the centre of the *screen* only when
-        // the idiom is pad. An iPhone app in a wide window, or an iPad window that is not
-        // full screen, anchors to the wrong place (or crashes if the idiom check is wrong).
-        if Device.isPad, let popover = sheet.popoverPresentationController {
+        // Anchored to the middle of the presenting view, wherever that view is. Compact
+        // widths present the action sheet at the bottom and ignore the anchor.
+        if let popover = sheet.popoverPresentationController {
+            let bounds = viewController.view.bounds
             popover.sourceView = viewController.view
-            popover.sourceRect = CGRect(x: Device.screenWidth / 2, y: Device.screenHeight / 2, width: 1, height: 1)
+            popover.sourceRect = CGRect(x: bounds.midX, y: bounds.midY, width: 1, height: 1)
             popover.permittedArrowDirections = []
         }
         viewController.present(sheet, animated: true)

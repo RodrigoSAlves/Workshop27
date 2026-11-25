@@ -16,9 +16,6 @@ extension UIViewController {
     }
 
     private func openSettings() {
-        // ⚠️ BAD PRACTICE: reaches the root through the app delegate's window instead of
-        // `view.window?.rootViewController` / the scene.
-        let appDelegate = UIApplication.shared.delegate as? AppDelegate
-        appDelegate?.rootTabBarController?.showSettings()
+        (tabBarController as? MainTabBarController)?.showSettings()
     }
 }
