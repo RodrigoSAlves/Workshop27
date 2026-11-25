@@ -25,7 +25,7 @@ final class SettingsViewController: UIViewController, UITableViewDataSource, UIT
         var footer: String? {
             switch self {
             case .quality: return "Higher quality uses more data."
-            case .diagnostics: return "What the legacy helpers believe about the space the app has. Resize the window and compare."
+            case .diagnostics: return "The values this screen's layout reads from its own context. Resize the window and compare."
             default: return nil
             }
         }
@@ -52,72 +52,53 @@ final class SettingsViewController: UIViewController, UITableViewDataSource, UIT
         tableView.delegate = self
         tableView.tintColor = .systemPink
         tableView.register(UITableViewCell.self, forCellReuseIdentifier: cellID)
+        // Full width, with cell content kept to a readable width when the space is wide.
+        // This adapts to the width the table actually has, on any device.
+        tableView.cellLayoutMarginsFollowReadableWidth = true
         tableView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(tableView)
-
-        // ⚠️ BAD PRACTICE: on iPad the table is clamped to a fixed width; on iPhone it is
-        // full width. The idiom, not the available width, decides. Use
-        // `cellLayoutMarginsFollowReadableWidth` / `readableContentGuide` instead.
         NSLayoutConstraint.activate([
             tableView.topAnchor.constraint(equalTo: view.topAnchor),
             tableView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            tableView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            tableView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            tableView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
         ])
-        if Device.isPad {
-            tableView.widthAnchor.constraint(equalToConstant: Metrics.settingsMaxWidth).isActive = true
-        } else {
-            tableView.widthAnchor.constraint(equalTo: view.widthAnchor).isActive = true
+
+        registerForTraitChanges([UITraitUserInterfaceStyle.self, UITraitHorizontalSizeClass.self,
+                                 UITraitVerticalSizeClass.self, UITraitDisplayScale.self]) { (self: SettingsViewController, _) in
+            self.reloadDiagnostics()
         }
     }
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
-        tableView.reloadSections(IndexSet(integer: Section.diagnostics.rawValue), with: .none)
+        reloadDiagnostics()
     }
 
-    // ⚠️ BAD PRACTICE: traitCollectionDidChange(_:) is deprecated since iOS 17.
-    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
-        super.traitCollectionDidChange(previousTraitCollection)
-        if traitCollection.userInterfaceStyle != previousTraitCollection?.userInterfaceStyle
-            || traitCollection.horizontalSizeClass != previousTraitCollection?.horizontalSizeClass {
-            tableView.reloadSections(IndexSet(integer: Section.diagnostics.rawValue), with: .none)
-        }
+    private func reloadDiagnostics() {
+        tableView.reloadSections(IndexSet(integer: Section.diagnostics.rawValue), with: .none)
     }
 
     override func viewWillTransition(to size: CGSize, with coordinator: UIViewControllerTransitionCoordinator) {
         super.viewWillTransition(to: size, with: coordinator)
         coordinator.animate(alongsideTransition: nil) { _ in
-            self.tableView.reloadSections(IndexSet(integer: Section.diagnostics.rawValue), with: .none)
+            self.reloadDiagnostics()
         }
     }
 
-    // MARK: - Connected apps (canOpenURL)
+    // MARK: - Connected apps
 
-    private var querySchemes: [String] {
-        Bundle.main.object(forInfoDictionaryKey: "LSApplicationQueriesSchemes") as? [String] ?? []
-    }
-
-    /// ⚠️ BAD PRACTICE: probes every declared scheme with canOpenURL(_:).
-    /// The iOS 27 SDK limits LSApplicationQueriesSchemes to 25 entries; Apple recommends
-    /// calling open(_:options:completionHandler:) and handling failure instead.
-    private var installedShareTargets: [String] {
-        querySchemes.filter { scheme in
-            guard let url = URL(string: "\(scheme)://") else { return false }
-            return UIApplication.shared.canOpenURL(url)
-        }
-    }
-
+    /// Opens the Music app through this screen's scene and handles failure, instead of
+    /// probing with canOpenURL(_:) first. No LSApplicationQueriesSchemes entry is needed.
     private func openMusicApp() {
-        let url = URL(string: "music://")!
-        // ⚠️ BAD PRACTICE: canOpenURL gate before open.
-        if UIApplication.shared.canOpenURL(url) {
-            UIApplication.shared.open(url)
-        } else {
+        guard let url = URL(string: "music://"), let scene = view.window?.windowScene else { return }
+        scene.open(url, options: nil) { [weak self] success in
+            guard !success, let self else { return }
             let alert = UIAlertController(title: "Music not installed",
                                           message: "We couldn't find the Music app on this device.",
                                           preferredStyle: .alert)
             alert.addAction(UIAlertAction(title: "OK", style: .default))
-            present(alert, animated: true)
+            self.present(alert, animated: true)
         }
     }
 
@@ -193,7 +174,7 @@ final class SettingsViewController: UIViewController, UITableViewDataSource, UIT
                 cell.accessoryType = .disclosureIndicator
             } else {
                 content.text = "Share Destinations"
-                content.secondaryText = "\(installedShareTargets.count) of \(querySchemes.count) apps detected"
+                content.secondaryText = "The system share sheet lists the apps you have installed"
                 content.image = UIImage(systemName: "square.and.arrow.up")
                 cell.selectionStyle = .none
             }
@@ -202,17 +183,26 @@ final class SettingsViewController: UIViewController, UITableViewDataSource, UIT
         case .diagnostics:
             cell.selectionStyle = .none
             content = UIListContentConfiguration.valueCell()
+            let traits = traitCollection
             let rows: [(String, String)] = [
-                ("Idiom", Device.isPad ? "pad" : "phone"),
-                ("UIScreen.main", "\(Int(Device.screenWidth)) × \(Int(Device.screenHeight)) @\(Int(Device.scale))x"),
+                ("Horizontal size class", Self.name(of: traits.horizontalSizeClass)),
+                ("Vertical size class", Self.name(of: traits.verticalSizeClass)),
                 ("View bounds", "\(Int(view.bounds.width)) × \(Int(view.bounds.height))"),
-                ("Orientation", Device.isLandscape ? "landscape" : "portrait"),
+                ("Display scale", "@\(Int(traits.displayScale))x"),
             ]
             content.text = rows[indexPath.row].0
             content.secondaryText = rows[indexPath.row].1
         }
         cell.contentConfiguration = content
         return cell
+    }
+
+    private static func name(of sizeClass: UIUserInterfaceSizeClass) -> String {
+        switch sizeClass {
+        case .compact: return "compact"
+        case .regular: return "regular"
+        default: return "unspecified"
+        }
     }
 
     // MARK: - Delegate

@@ -60,7 +60,7 @@ final class SettingsStore {
         get { AppTheme(rawValue: defaults.integer(forKey: "theme")) ?? .system }
         set {
             defaults.set(newValue.rawValue, forKey: "theme")
-            ThemeManager.apply(newValue)
+            ThemeManager.applyToConnectedScenes(newValue)
         }
     }
 
@@ -76,9 +76,15 @@ final class SettingsStore {
 }
 
 enum ThemeManager {
-    /// ⚠️ BAD PRACTICE: reaches every window through the deprecated
-    /// `UIApplication.shared.windows` instead of the scene's own windows.
-    static func apply(_ theme: AppTheme) {
-        UIApplication.shared.windows.forEach { $0.overrideUserInterfaceStyle = theme.style }
+    /// Applies the theme to the windows of one scene. Called when a scene connects.
+    static func apply(_ theme: AppTheme, to windowScene: UIWindowScene) {
+        windowScene.windows.forEach { $0.overrideUserInterfaceStyle = theme.style }
+    }
+
+    /// The theme is an app-wide preference, so a change reaches every connected scene.
+    static func applyToConnectedScenes(_ theme: AppTheme) {
+        UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .forEach { apply(theme, to: $0) }
     }
 }

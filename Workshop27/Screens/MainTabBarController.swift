@@ -29,7 +29,10 @@ final class MainTabBarController: UITabBarController {
             makeTab(SongListViewController(source: .liked), title: "Liked Songs", image: "heart", selected: "heart.fill"),
         ]
 
-        view.addSubview(miniPlayer)
+        // The system positions the accessory above the tab bar (or inline with it when
+        // the tab bar minimizes), adapts it to the window size, and adds it to the safe
+        // area of every tab, so no manual frame or inset bookkeeping is needed.
+        bottomAccessory = UITabAccessory(contentView: miniPlayer)
         let tap = UITapGestureRecognizer(target: self, action: #selector(miniPlayerTapped))
         miniPlayer.addGestureRecognizer(tap)
     }
@@ -39,36 +42,7 @@ final class MainTabBarController: UITabBarController {
         nav.navigationBar.prefersLargeTitles = true
         nav.tabBarItem = UITabBarItem(title: title, image: UIImage(systemName: image),
                                       selectedImage: UIImage(systemName: selected))
-        // Leave room for the floating mini player.
-        nav.additionalSafeAreaInsets.bottom = Metrics.miniPlayerHeight + 8
         return nav
-    }
-
-    override func viewDidLayoutSubviews() {
-        super.viewDidLayoutSubviews()
-        miniPlayer.frame = miniPlayerFrame()
-    }
-
-    /// ⚠️ BAD PRACTICE: the mini player frame is computed from the *screen* size, the key
-    /// window's safe area and a hard-coded tab bar height. When the window is not the
-    /// size of the screen (iPad windowing, iPhone Mirroring, iPhone Duo) or the tab bar
-    /// changes shape (Liquid Glass), the player ends up in the wrong place.
-    private func miniPlayerFrame() -> CGRect {
-        let height = Metrics.miniPlayerHeight
-        let width = Device.isPad ? min(Device.screenWidth * 0.6, 640) : Device.screenWidth - 16
-        let x = (Device.screenWidth - width) / 2
-        let y = Device.screenHeight - Device.safeAreaBottom - Metrics.tabBarHeight - height - 8
-        return CGRect(x: x, y: y, width: width, height: height)
-    }
-
-    // ⚠️ BAD PRACTICE: reacts to the device orientation instead of the new size.
-    override func viewWillTransition(to size: CGSize, with coordinator: UIViewControllerTransitionCoordinator) {
-        super.viewWillTransition(to: size, with: coordinator)
-        if UIDevice.current.orientation.isLandscape || UIDevice.current.orientation.isPortrait {
-            coordinator.animate(alongsideTransition: { _ in
-                self.miniPlayer.frame = self.miniPlayerFrame()
-            })
-        }
     }
 
     // MARK: - Settings
@@ -79,13 +53,12 @@ final class MainTabBarController: UITabBarController {
         if nav.topViewController is SettingsViewController { return }
         let settings = SettingsViewController()
 
-        // ⚠️ BAD PRACTICE: the idiom decides the presentation style. A narrow iPad window
-        // gets a form sheet that fills it anyway; a wide iPhone window gets a full-width push.
-        // Let the size class / UISheetPresentationController adapt instead.
-        if Device.isPad {
+        // The space this window has decides the presentation, not the device: a wide
+        // window gets a form sheet, a narrow one gets a push.
+        if traitCollection.horizontalSizeClass == .regular {
             let modal = UINavigationController(rootViewController: settings)
             modal.modalPresentationStyle = .formSheet
-            modal.preferredContentSize = CGSize(width: Metrics.settingsMaxWidth, height: Device.screenHeight * 0.7)
+            modal.preferredContentSize = CGSize(width: Metrics.settingsMaxWidth, height: view.bounds.height * 0.7)
             present(modal, animated: true)
         } else {
             nav.pushViewController(settings, animated: true)
@@ -94,6 +67,6 @@ final class MainTabBarController: UITabBarController {
 
     @objc private func miniPlayerTapped() {
         guard let song = PlayerState.shared.current else { return }
-        SongActions.present(for: song, from: self)
+        SongActions.present(for: song, from: self, sourceItem: miniPlayer)
     }
 }

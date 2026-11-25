@@ -17,6 +17,7 @@ final class SongListViewController: UITableViewController {
     private let source: Source
     private let library = MusicLibrary.shared
     private var songs: [Song] = []
+    private let header = SongListHeaderView()
 
     init(source: Source) {
         self.source = source
@@ -37,12 +38,18 @@ final class SongListViewController: UITableViewController {
         }
 
         tableView.register(SongCell.self, forCellReuseIdentifier: SongCell.reuseID)
-        // ⚠️ BAD PRACTICE: row height by idiom.
-        tableView.rowHeight = Metrics.songRowHeight
-        tableView.separatorInset.left = Metrics.horizontalPadding + Metrics.songArtworkSize + 12
+        // Rows size themselves from their content (artwork size, Dynamic Type).
+        tableView.rowHeight = UITableView.automaticDimension
+        tableView.estimatedRowHeight = 62
 
+        configureHeader()
         reloadSongs()
-        installHeader()
+        updateHeaderVisibility()
+
+        // A short window (for example, iPhone landscape) has no room for the big header.
+        registerForTraitChanges([UITraitVerticalSizeClass.self]) { (self: SongListViewController, _) in
+            self.updateHeaderVisibility()
+        }
 
         NotificationCenter.default.addObserver(self, selector: #selector(reloadSongs),
                                                name: .likedSongsDidChange, object: nil)
@@ -56,7 +63,7 @@ final class SongListViewController: UITableViewController {
         case .playlist(let playlist): songs = library.songs(in: playlist)
         }
         tableView.reloadData()
-        (tableView.tableHeaderView as? SongListHeaderView)?.updateCount(songs.count)
+        header.updateCount(songs.count)
         updateEmptyState()
     }
 
@@ -66,16 +73,7 @@ final class SongListViewController: UITableViewController {
 
     // MARK: - Header
 
-    /// ⚠️ BAD PRACTICE: frame-based table header sized from the screen, and hidden
-    /// entirely when the device is in landscape.
-    private func installHeader() {
-        if Device.isLandscape && Device.isPhone {
-            tableView.tableHeaderView = nil
-            return
-        }
-        let header = SongListHeaderView(frame: CGRect(x: 0, y: 0,
-                                                      width: Device.screenWidth,
-                                                      height: Metrics.listHeaderHeight))
+    private func configureHeader() {
         switch source {
         case .liked:
             header.configure(title: "Liked Songs", subtitle: "Songs you love, all in one place",
@@ -92,14 +90,26 @@ final class SongListViewController: UITableViewController {
             guard let song = self?.songs.randomElement() else { return }
             PlayerState.shared.play(song)
         }
-        tableView.tableHeaderView = header
     }
 
-    // ⚠️ BAD PRACTICE: header rebuilt from the orientation, `size` ignored.
-    override func viewWillTransition(to size: CGSize, with coordinator: UIViewControllerTransitionCoordinator) {
-        super.viewWillTransition(to: size, with: coordinator)
-        coordinator.animate(alongsideTransition: nil) { _ in
-            self.installHeader()
+    private func updateHeaderVisibility() {
+        tableView.tableHeaderView = traitCollection.verticalSizeClass == .compact ? nil : header
+        view.setNeedsLayout()
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        // Table header views are frame-based: size the header to the table's current
+        // width every layout pass, so it follows window resizes.
+        guard let header = tableView.tableHeaderView else { return }
+        let fitting = header.systemLayoutSizeFitting(
+            CGSize(width: tableView.bounds.width, height: UIView.layoutFittingCompressedSize.height),
+            withHorizontalFittingPriority: .required,
+            verticalFittingPriority: .fittingSizeLevel)
+        let size = CGSize(width: tableView.bounds.width, height: ceil(fitting.height))
+        if header.frame.size != size {
+            header.frame.size = size
+            tableView.tableHeaderView = header // Reassign so the table picks up the new height.
         }
     }
 
@@ -111,6 +121,7 @@ final class SongListViewController: UITableViewController {
         label.textAlignment = .center
         label.textColor = .secondaryLabel
         label.font = Metrics.titleFont
+        label.adjustsFontForContentSizeCategory = true
         tableView.backgroundView = label
     }
 
@@ -159,21 +170,32 @@ final class SongListHeaderView: UIView {
     private let titleLabel = UILabel()
     private let subtitleLabel = UILabel()
     private let countLabel = UILabel()
+    private let buttons = UIStackView()
+    private let main = UIStackView()
+
+    private var leading: NSLayoutConstraint!
+    private var trailing: NSLayoutConstraint!
+    private var compactTrailing: NSLayoutConstraint!
+    /// Side-by-side layout: fixed artwork size and natural-width buttons.
+    private var regularConstraints: [NSLayoutConstraint] = []
+    /// Stacked layout: artwork at half the width, centered, full-width buttons.
+    private var compactConstraints: [NSLayoutConstraint] = []
 
     override init(frame: CGRect) {
         super.init(frame: frame)
         artwork.cornerRadius = 16
-        titleLabel.font = .systemFont(ofSize: Device.isPad ? 34 : 24, weight: .heavy)
+        titleLabel.font = Metrics.font(.title1, weight: .heavy)
         titleLabel.numberOfLines = 2
         subtitleLabel.font = Metrics.subtitleFont
         subtitleLabel.textColor = .secondaryLabel
         subtitleLabel.numberOfLines = 2
         countLabel.font = Metrics.subtitleFont
         countLabel.textColor = .secondaryLabel
+        [titleLabel, subtitleLabel, countLabel].forEach { $0.adjustsFontForContentSizeCategory = true }
 
         let play = makeButton(title: "Play", symbol: "play.fill", filled: true, action: #selector(playTapped))
         let shuffle = makeButton(title: "Shuffle", symbol: "shuffle", filled: false, action: #selector(shuffleTapped))
-        let buttons = UIStackView(arrangedSubviews: [play, shuffle])
+        [play, shuffle].forEach(buttons.addArrangedSubview)
         buttons.spacing = 12
         buttons.distribution = .fillEqually
 
@@ -182,34 +204,59 @@ final class SongListHeaderView: UIView {
         text.spacing = 6
         text.setCustomSpacing(16, after: countLabel)
 
-        // ⚠️ BAD PRACTICE: the idiom decides between side-by-side and stacked layout.
-        let main = UIStackView(arrangedSubviews: [artwork, text])
-        main.axis = Device.isPad ? .horizontal : .vertical
-        main.alignment = Device.isPad ? .center : .center
-        main.spacing = Device.isPad ? 28 : 16
-        if Device.isPhone {
-            titleLabel.textAlignment = .center
-            subtitleLabel.textAlignment = .center
-            countLabel.textAlignment = .center
-            buttons.widthAnchor.constraint(equalToConstant: Device.screenWidth - Metrics.horizontalPadding * 2).isActive = true
-        }
-
+        [artwork, text].forEach(main.addArrangedSubview)
+        main.alignment = .center
         main.translatesAutoresizingMaskIntoConstraints = false
         addSubview(main)
-        let size = Metrics.listHeaderArtworkSize
+
+        // Pin to the safe area: a vertical bar (for example on iPhone Duo) arrives as a
+        // leading or trailing inset, and the header must not slide under it.
+        let safeArea = safeAreaLayoutGuide
+        leading = main.leadingAnchor.constraint(equalTo: safeArea.leadingAnchor)
+        trailing = main.trailingAnchor.constraint(lessThanOrEqualTo: safeArea.trailingAnchor)
         NSLayoutConstraint.activate([
-            artwork.widthAnchor.constraint(equalToConstant: size),
-            artwork.heightAnchor.constraint(equalToConstant: size),
-            main.leadingAnchor.constraint(equalTo: leadingAnchor, constant: Metrics.horizontalPadding),
-            main.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -Metrics.horizontalPadding),
-            main.centerYAnchor.constraint(equalTo: centerYAnchor),
+            leading, trailing,
+            artwork.heightAnchor.constraint(equalTo: artwork.widthAnchor),
+            main.topAnchor.constraint(equalTo: topAnchor, constant: 24),
+            main.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -24),
         ])
-        if Device.isPhone {
-            main.centerXAnchor.constraint(equalTo: centerXAnchor).isActive = true
+        regularConstraints = [
+            artwork.widthAnchor.constraint(equalToConstant: 220),
+        ]
+        // The stacked layout spans the padded width so the buttons can fill it.
+        compactTrailing = main.trailingAnchor.constraint(equalTo: safeArea.trailingAnchor)
+        compactConstraints = [
+            artwork.widthAnchor.constraint(equalTo: safeArea.widthAnchor, multiplier: 0.5),
+            buttons.widthAnchor.constraint(equalTo: main.widthAnchor),
+            compactTrailing,
+        ]
+
+        updateLayoutForSizeClass()
+        registerForTraitChanges([UITraitHorizontalSizeClass.self]) { (self: SongListHeaderView, _) in
+            self.updateLayoutForSizeClass()
         }
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    /// The width this header has decides between side-by-side and stacked layout.
+    private func updateLayoutForSizeClass() {
+        let traits = traitCollection
+        let isRegular = Metrics.isRegularWidth(traits)
+        main.axis = isRegular ? .horizontal : .vertical
+        main.spacing = isRegular ? 28 : 16
+        let alignment: NSTextAlignment = isRegular ? .natural : .center
+        [titleLabel, subtitleLabel, countLabel].forEach { $0.textAlignment = alignment }
+
+        let padding = Metrics.horizontalPadding(for: traits)
+        leading.constant = padding
+        trailing.constant = -padding
+
+        compactTrailing.constant = -padding
+
+        NSLayoutConstraint.deactivate(isRegular ? compactConstraints : regularConstraints)
+        NSLayoutConstraint.activate(isRegular ? regularConstraints : compactConstraints)
+    }
 
     func configure(title: String, subtitle: String, palette: Int, symbol: String, count: Int) {
         artwork.configure(palette: palette, symbol: symbol)

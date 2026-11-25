@@ -7,7 +7,7 @@
 
 import UIKit
 
-struct Song: Hashable {
+nonisolated struct Song: Hashable, Sendable {
     let id: Int
     let title: String
     let artist: String
@@ -21,7 +21,7 @@ struct Song: Hashable {
     }
 }
 
-struct Playlist: Hashable {
+nonisolated struct Playlist: Hashable, Sendable {
     let id: Int
     let name: String
     let subtitle: String
